@@ -50,7 +50,8 @@ class SingletonRAG:
                 allow_dangerous_deserialization=True,
             )
 
-        pdf_files = glob(os.path.join(DATA_DIR, "*.pdf"))
+        # data 하위 폴더까지 포함해 모든 PDF를 수집한다.
+        pdf_files = sorted(glob(os.path.join(DATA_DIR, "**", "*.pdf"), recursive=True))
         documents = []
 
         for pdf_path in pdf_files:
