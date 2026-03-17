@@ -1,11 +1,12 @@
 from src.core.bootstrap import ensure_project_dirs
-from src.core.rag import rag
 from src.core.tools import web_search_tool
 from src.graph.workflow import build_graph
 
+# 디렉토리 보장 → 그래프 빌드 순서를 지킨다.
 ensure_project_dirs()
 
-# 전역 접근 포인트: 앱 실행 시 공통 자원을 미리 초기화
+# RAG 인스턴스는 각 에이전트에서 namespace 별로 직접 호출한다.
+# 예: SingletonRAG.get_instance("lges") / "catl" / "market" / "common"
 app_graph = build_graph()
 
-__all__ = ["app_graph", "rag", "web_search_tool"]
+__all__ = ["app_graph", "web_search_tool"]
