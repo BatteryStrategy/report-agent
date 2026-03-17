@@ -1,0 +1,26 @@
+[project]
+name = "rag-agent"
+version = "0.1.0"
+description = "Multi-Agent Report Generator"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.2.0",
+    "markdown>=3.7",
+    "openai>=1.50.0",
+    "pdfplumber>=0.11.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+    "sentence-transformers>=3.0.0",
+    "weasyprint>=62.0",
+    "faiss-cpu>=1.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
