@@ -6,4 +6,9 @@ _rag = SingletonRAG.get_instance("common")
 
 
 def comparison_node(state: GraphState) -> GraphState:
-    pass
+    """T4 Comparison — 현재 stub: T5 validation으로 진행."""
+    supervisor = dict(state.get("supervisor") or {})
+    supervisor["current_task"] = "T5"
+    state["supervisor"] = supervisor
+    state["current_task"] = "T5"
+    return state
