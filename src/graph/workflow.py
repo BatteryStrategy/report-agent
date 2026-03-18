@@ -4,6 +4,7 @@ from src.agents.catl_strategy import catl_strategy_node
 from src.agents.comparison import comparison_node
 from src.agents.lges_strategy import lges_strategy_node
 from src.agents.market_research import market_research_node
+from src.agents.reflection import reflection_node
 from src.agents.report_writer import report_writer_node
 from src.agents.supervisor import route_from_supervisor, supervisor_node
 from src.agents.validation import validation_node
@@ -11,7 +12,7 @@ from src.core.state import GraphState
 
 
 def build_graph():
-    """Supervisor + 6 Worker 노드를 포함한 StateGraph 뼈대를 구성한다."""
+    """Supervisor + 7 Worker 노드를 포함한 StateGraph 뼈대를 구성한다."""
     graph_builder = StateGraph(GraphState)
 
     graph_builder.add_node("supervisor", supervisor_node)
@@ -21,6 +22,7 @@ def build_graph():
     graph_builder.add_node("validation", validation_node)
     graph_builder.add_node("comparison", comparison_node)
     graph_builder.add_node("report_writer", report_writer_node)
+    graph_builder.add_node("reflection", reflection_node)
 
     graph_builder.add_edge(START, "supervisor")
 
@@ -34,6 +36,7 @@ def build_graph():
             "comparison": "comparison",
             "validation": "validation",
             "report_writer": "report_writer",
+            "reflection": "reflection",
             "END": END,
         },
     )
@@ -44,5 +47,6 @@ def build_graph():
     graph_builder.add_edge("comparison", "supervisor")
     graph_builder.add_edge("validation", "supervisor")
     graph_builder.add_edge("report_writer", "supervisor")
+    graph_builder.add_edge("reflection", "supervisor")
 
     return graph_builder.compile()
