@@ -1,169 +1,102 @@
-# report-agent
+# 전기차 캐즘 여파 속 LGES·CATL 포트폴리오 다각화 전략 비교 보고서 자동 생성 에이전트
 
-배터리 시장 전략 비교 보고서를 생성하는 LangGraph 기반 Multi-Agent 프로젝트입니다.
+LangGraph 기반 Multi-Agent 시스템으로 LGES(LG에너지솔루션)와 CATL의 배터리 전략을 자동으로 조사·비교·분석하여 PDF 보고서를 생성합니다.
 
-## Supervisor 기반 워크플로우
+## Overview
 
-이 프로젝트는 중앙 Supervisor가 태스크를 순차적으로 라우팅하는 구조를 사용합니다.
+- **Objective** : 전기차 캐즘 국면에서 양사의 포트폴리오 다각화 전략 차이를 체계적으로 비교 분석하고, 근거 기반 전략 보고서를 자동 생성
+- **Method** : RAG(내부 문서 우선) + Tavily 웹서치 Fallback으로 데이터를 수집하고, Supervisor 패턴의 Multi-Agent 파이프라인이 검증·비교·보고서 작성·품질 점검을 순차 수행
+- **Tools** : LangGraph, FAISS, GPT-4o-mini, Tavily Search, WeasyPrint
 
-- Supervisor가 `current_task`와 `status`를 확인합니다.
+## Features
 
-- Task ID(T1~T7)에 맞는 워커 노드로 분기합니다.
+- **PDF·Markdown 문서 기반 정보 추출** : LGES·CATL 공시 자료 및 시장 리포트를 청크 단위로 임베딩해 FAISS 벡터 인덱스로 관리
+- **RAG 우선 + 웹서치 Fallback** : 내부 문서 충분 시 RAG만 사용, 부족 시 Tavily 웹서치로 보완해 불필요한 API 비용 최소화
+- **8개 노드 순차 파이프라인** : Research → Validation → Comparison → SWOT → Report → Reflection 단계로 역할 분리
+- **Validation 재시도 루프** : 편향성·필수 항목 누락·출처 문제 탐지 시 Research 단계부터 최대 2회 재실행
+- **Reflection 품질 점검 루프** : 필수 섹션 존재·각주 표기·LGES/CATL 서술 균형을 자동 점검하고 미달 시 보고서 재생성
+- **확증 편향 방지 전략** : Validation Agent가 긍정·부정 비율을 LLM으로 분류해 한쪽 비율이 80% 초과 시 REVISE 판정, 양사 균형 서술 강제
+- **보고서 자동 출력** : Markdown 및 PDF 형식으로 `output/report/`에 타임스탬프 파일명으로 저장
 
-- 워커가 자신의 산출물을 공유 출력 필드에 기록합니다.
+## Tech Stack
 
-- 실행이 끝나면 다시 Supervisor로 복귀합니다.
+| Category   | Details                             |
+|------------|-------------------------------------|
+| Framework  | LangGraph, LangChain, Python 3.11   |
+| LLM        | GPT-4o-mini via OpenAI API          |
+| Retrieval  | FAISS                               |
+| Embedding  | BAAI/bge-m3 (multilingual)          |
+| Web Search | Tavily Search API                   |
+| Export     | WeasyPrint (PDF), Markdown          |
 
-- 검증 결과가 `REVISE`이면 이전 단계 재실행 루프로 돌아갑니다.
+## Agents
 
-- `status`가 `COMPLETED` 또는 `FAILED`가 되면 종료합니다.
+| # | Agent | 역할 | 사용 도구 | 입력 | 출력 |
+|---|-------|------|-----------|------|------|
+| A1 | Supervisor Agent | Goal/Criteria 관리, Task 분배, Validation 결과에 따른 재실행/종료 판단 | — (오케스트레이션) | 전체 State | 다음 실행 Agent 지시 |
+| A2 | Market Research Agent | 시장 배경 조사 (EV 캐즘, ESS, 정책, 공급망) | RAG Retriever, Web Search | Goal + T1 정의 | `market_background` |
+| A3 | LGES Search Agent | LGES 다각화 전략, 경쟁력, 리스크 분석 | RAG Retriever, Web Search | `market_background` + T2 정의 | `lges_strategy` |
+| A4 | CATL Search Agent | CATL 다각화 전략, 경쟁력, 리스크 분석 | RAG Retriever, Web Search | `market_background` + T3 정의 | `catl_strategy` |
+| A5 | Validation Agent | 편향/누락/형식 오류/근거 부족 검토, PASS/REVISE 반환 | — (검증) | 전체 State | `validation_result` (PASS/REVISE + 사유) |
+| A6 | Comparison Agent | 6축 공통 비교 프레임 정렬, 핵심 차이 도출 | — (분석/정리) | `lges_strategy` + `catl_strategy` | `comparison_result` |
+| A7 | SWOT Agent | 공통 비교 프레임 정렬, SWOT 작성, 핵심 차이 도출 | — (분석/정리) | `lges_strategy` + `catl_strategy` | `comparison_result`, `swot_result` |
+| A8 | Report Agent | 최종 보고서 작성 (SUMMARY, 본문, REFERENCE 형식 맞춤) | — (생성) | 전체 State (PASS 이후) | `final_report` (Markdown) |
+| A9 | Reflection Agent | 편향/누락/형식 오류/근거 부족 검토, PASS/REVISE 반환 | — (검증) | 전체 State | `validation_result` (PASS/REVISE + 사유) |
 
-현재 기본 Task 흐름은 아래와 같습니다.
-
-- T1: research_phase (market · lges · catl 병렬 fan-out)
-- T2: lges_strategy (REVISE 재시도 진입점)
-- T3: catl_strategy
-- T4: comparison
-- T5: validation
-- T6: report_writer
-- T7: reflection
-
-## Shared State를 사용하는 이유
-
-LangGraph의 기본 실행 모델은 하나의 그래프 상태 객체를 각 노드가 전달받는 방식입니다. 이 프로젝트도 해당 모델을 따릅니다.
-
-Shared State 사용:
-
-- Supervisor가 단일 상태에서 진행률, 태스크, 산출물 유무를 일관되게 판단할 수 있습니다.
-
-- 노드 간 별도 직렬화/역직렬화 레이어 없이 공용 출력 필드만 갱신하면 됩니다.
-
-- `validation_result`, `revision_history`, `status`를 한 상태에서 관리해 재실행 흐름을 명확히 제어할 수 있습니다.
-
-## 쓰기 규약(오염 방지 규칙)
-
-Shared State를 쓰더라도 모든 노드가 아무 키나 수정하면 상태 오염이 발생할 수 있습니다. 이를 막기 위해 "쓰기 규약"을 강제합니다.
-
-핵심 원칙:
-
-- Supervisor는 `supervisor` 네임스페이스만 갱신합니다.
-
-- 각 에이전트는 자신의 로컬 네임스페이스만 갱신합니다.
-
-- 로컬 네임스페이스: `market_agent`, `lges_agent`, `catl_agent`, `comparison_agent`, `validation_agent`, `report_agent`, `reflection_agent`
-
-- 파이프라인 합의 산출물만 공유 출력 필드에 기록합니다.
-
-- 공유 출력 필드: `market_background`, `lges_strategy`, `catl_strategy`, `comparison_result`, `swot_result`, `validation_result`, `final_report`, `references`
-
-- Reflection 에이전트는 `final_report` 품질 점검 결과를 `validation_result`와 `supervisor.revision_history`에 반영합니다.
-
-- 재시도 이력은 Supervisor가 `revision_history`로 일원 관리합니다.
-
-이 방식은 "전달은 공유, 수정은 분리" 원칙으로 정리할 수 있습니다.
-
-## 상태 스키마 개요
-
-현재 상태는 아래 두 계층으로 구성됩니다.
-
-- 제어/로컬 네임스페이스: `supervisor`, `*_agent` 전용 로컬 상태
-
-- 공유 산출물 필드: 태스크 완료 결과와 최종 보고서
-
-상세 타입 정의는 `src/core/state.py`를 참고하세요.
-
-## 검색 전략: RAG 우선 + Tavily Fallback
-
-각 Research 노드는 동일한 2단계 검색 정책을 따릅니다.
-
-**단계 1 — 내부 문서 검색 (RAG)**
-
-`SingletonRAG.get_instance(namespace).get_retriever()` 로 FAISS 인덱스에서 관련 청크를 검색합니다.
-PDF는 `data/raw/{namespace}/` 에 넣으면 자동으로 임베딩 및 색인됩니다.
-
-**단계 2 — 부족 판정 (4가지 기준)**
-
-| 기준 | 임계값 | 파일 위치 |
-|------|--------|-----------|
-| 최소 문서 수 | `MIN_DOCS = 3` | `src/core/rag_policy.py` |
-| 평균 관련도 | `MIN_RELEVANCE = 0.4` | `src/core/rag_policy.py` |
-| 필수 키워드 커버리지 | 100% (노드별 상이) | `REQUIRED_KEYWORDS` |
-| 최소 고유 출처 수 | `MIN_SOURCES = 2` | `src/core/rag_policy.py` |
-
-위 4가지 중 하나라도 실패하면 Tavily 웹 검색으로 fallback합니다.
-fallback 여부는 `state[*_agent]["fallback_used"]` 에 기록됩니다.
-
-**노드별 필수 키워드**
-
-| 노드 | 필수 키워드 |
-|------|------------|
-| market | `전기차`, `ESS` |
-| lges | `LGES`, `배터리`, `전략`, `재무` |
-| catl | `CATL`, `배터리`, `전략`, `재무` |
-
-**기준 선택 이유**
-
-- **내부 근거 우선**: 검증된 PDF 문서를 먼저 사용해 LLM 환각을 줄입니다.
-- **비용/속도 균형**: RAG는 무료이고 빠릅니다. Tavily는 충분하지 않을 때만 호출해 API 비용을 최소화합니다.
-- **임계값 근거**: MIN_DOCS=3은 단일 청크 의존 방지, MIN_RELEVANCE=0.4는 FAISS L2 거리 정규화(`1/(1+dist)`) 기준 "관련 있음" 하한, MIN_SOURCES=2는 단일 문서 편향 방지입니다.
-
----
-
-## Validation 편향성 점검
-
-`validation_node` (T5)는 세 가지 항목을 검증합니다.
-
-### 1. 데이터 편향성 점검
-
-LLM이 LGES·CATL 분석 텍스트를 각각 긍정 문장과 부정 문장으로 분류합니다.
+## Architecture
 
 ```
-긍정 비율 = 긍정 문장 수 / (긍정 + 부정 문장 수)
+query
+  └─ Supervisor Agent
+        ├─ [병렬] Market / LGES / CATL Search Agent  ──┐
+        │                                              │ 검증 실패 시 재시도
+        ├─ Validation Agent  ◄──────────────────────────┘
+        ├─ Comparison Agent
+        ├─ SWOT Agent
+        ├─ Report Agent  ◄─────────────────────────────┐
+        └─ Reflection Agent  ───────────────────────────┘ 검토 실패 시 재작성
+              └─ output (PDF / Markdown)
 ```
 
-한쪽 비율이 `BIAS_THRESHOLD = 70%` 를 초과하면 편향으로 판정합니다.
+## Directory Structure
 
-| 판정 예시 | 결과 |
-|-----------|------|
-| LGES 긍정 75%, 부정 25% | REVISE (긍정 편향) |
-| CATL 긍정 40%, 부정 60% | PASS (균형) |
-| CATL 부정 80%, 긍정 20% | REVISE (부정 편향) |
-
-### 2. 필수 비교 항목 누락 점검
-
-아래 4개 항목이 모두 분석 텍스트에 포함되어야 합니다.
-
-`재무` · `기술` · `시장` · `리스크`
-
-LLM 분류 실패 시 텍스트 직접 키워드 매칭으로 fallback합니다.
-
-### 3. 출처 교차 검증
-
-LGES 또는 CATL 중 하나 이상이 **내부(RAG) + 외부(Web) 양쪽 출처를 모두 사용**했어야 합니다.
-
-```python
-cross_validated = (lges.rag_doc_count > 0 AND lges.web_result_count > 0)
-               OR (catl.rag_doc_count > 0 AND catl.web_result_count > 0)
+```
+├── data/
+│   └── raw/
+│       ├── catl/          # CATL 청크 문서 (.md)
+│       ├── lges/          # LGES 재무 보고서 (.pdf)
+│       ├── market/        # 배터리 시장 리포트 (.pdf)
+│       └── common/        # 공통 참고 문서
+├── faiss_index/           # FAISS 벡터 인덱스 (자동 생성)
+├── src/
+│   ├── agents/            # Agent 모듈 (8개 노드)
+│   ├── core/              # RAG, State, Tools, 정책 유틸
+│   ├── graph/             # LangGraph 워크플로우 빌더
+│   └── main.py            # 실행 스크립트
+├── output/
+│   └── report/            # 생성된 보고서 (.md / .pdf)
+├── pyproject.toml
+└── README.md
 ```
 
-미충족 시 REVISE로 판정합니다.
+## Getting Started
 
-### 판정 결과 및 재시도 규칙
+```bash
+# 의존성 설치
+uv sync
 
-| 상태 | 다음 액션 |
-|------|-----------|
-| `PASS` | T6 report_writer 진행 |
-| `REVISE` | `revision_history` 에 사유 기록 후 T2 재실행 |
-| `FAILED` | `MAX_RETRIES = 2` 초과 시 워크플로우 종료 |
+# 환경변수 설정
+cp .env.example .env
+# .env 에 OPENAI_API_KEY, TAVILY_API_KEY 입력
 
-REVISE 발생 시 `state["validation_result"]["revision_notes"]` 에 구체 사유가 기록됩니다.
+# 실행
+.venv/bin/python -m src.main
+```
 
----
+보고서는 `output/report/battery_strategy_report_YYYYMMDD_HHMMSS.pdf` 로 저장됩니다.
 
-## 구현 참고
+## Contributors
 
-- Supervisor 라우팅 로직: `src/agents/supervisor.py`
-- 그래프 빌드 및 Retry 루프: `src/graph/workflow.py`
-- RAG 부족 판정 상수·함수: `src/core/rag_policy.py`
-- 상태 타입 정의: `src/core/state.py`
-- Validation 편향 로직: `src/agents/validation.py`
+- **한준교** : Graph State(`TypedDict`) 정의, Supervisor Agent 로직 구현, 전체 Graph 뼈대(Node 등록 및 기본 Edge, Conditional Edge 라우팅) 구축
+- **서지윤** : Market Research Agent, Validation Agent 상세 구현 및 Supervisor와의 Reflect(재실행) 루프 연동 로직 완성
+- **김준서** : LGES & CATL Strategy Agent(Fan-out/Fan-in 병렬 처리 적용), Comparison & SWOT Agent, Report Writer Agent 상세 구현

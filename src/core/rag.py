@@ -1,7 +1,7 @@
 import os
 from glob import glob
 
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -78,12 +78,17 @@ class SingletonRAG:
                 allow_dangerous_deserialization=True,
             )
 
-        # 네임스페이스 폴더 하위의 모든 PDF를 수집한다.
+        # 네임스페이스 폴더 하위의 모든 PDF·Markdown 파일을 수집한다.
         pdf_files = sorted(glob(os.path.join(self._data_dir, "**", "*.pdf"), recursive=True))
+        md_files = sorted(glob(os.path.join(self._data_dir, "**", "*.md"), recursive=True))
         documents = []
 
         for pdf_path in pdf_files:
             loader = PyPDFLoader(pdf_path)
+            documents.extend(loader.load())
+
+        for md_path in md_files:
+            loader = TextLoader(md_path, encoding="utf-8")
             documents.extend(loader.load())
 
         split_docs = self.text_splitter.split_documents(documents)
