@@ -36,7 +36,7 @@ _rag.__init__()
 # ─────────────────────────────────────────────
 
 #: 편향 판정 임계값 — 한쪽(긍정 또는 부정)이 이 비율 초과 시 편향
-BIAS_THRESHOLD: float = 0.70
+BIAS_THRESHOLD: float = 0.80
 
 #: 최대 재시도 횟수 — 초과 시 FAILED 처리
 MAX_RETRIES: int = 2
@@ -84,7 +84,7 @@ def _extract_json(text: str) -> dict:
         return json.loads(text.strip())
     except json.JSONDecodeError:
         # JSON 파싱 실패 시 빈 구조 반환
-        logger.warning("[T5] LLM 응답 JSON 파싱 실패, 빈 구조 사용")
+        logger.warning("[T4] LLM 응답 JSON 파싱 실패, 빈 구조 사용")
         return {
             "lges_positive": [],
             "lges_negative": [],
@@ -121,7 +121,7 @@ def validation_node(state: GraphState) -> GraphState:
       - 재시도 횟수 < MAX_RETRIES → current_task = "T2" (Research 재실행)
       - 재시도 횟수 >= MAX_RETRIES → status = "FAILED" (무한루프 방지)
     """
-    logger.info("[T5] validation_node 시작")
+    logger.info("[T4] validation_node 시작")
 
     lges_data: dict = state.get("lges_strategy") or {}
     catl_data: dict = state.get("catl_strategy") or {}
@@ -143,7 +143,7 @@ def validation_node(state: GraphState) -> GraphState:
         response = llm.invoke(messages)
         classification = _extract_json(response.content)
     except Exception as exc:
-        logger.error("[T5] LLM 분류 호출 실패: %s", exc)
+        logger.error("[T4] LLM 분류 호출 실패: %s", exc)
         classification = {
             "lges_positive": [],
             "lges_negative": [],
@@ -202,7 +202,7 @@ def validation_node(state: GraphState) -> GraphState:
     if validation_status == "REVISE":
         if len(revision_history) >= MAX_RETRIES:
             logger.warning(
-                "[T5] 최대 재시도(%d회) 초과 → FAILED 처리", MAX_RETRIES
+                "[T4] 최대 재시도(%d회) 초과 → FAILED 처리", MAX_RETRIES
             )
             validation_status = "FAILED"
         else:
@@ -242,17 +242,17 @@ def validation_node(state: GraphState) -> GraphState:
     }
 
     # ── 8. Supervisor 진행 신호 ───────────────────────────
-    # PASS → T6(report_writer)
+    # PASS   → T5(comparison)  검증 통과 후 비교 분석 진행
     # REVISE → T2(lges/catl Research 재실행)  ← 재시도 루프 진입점
     # FAILED → FAILED 종료
     if validation_status == "PASS":
-        supervisor["current_task"] = "T6"
-        state["current_task"] = "T6"
-        logger.info("[T5] PASS → T6 report_writer 진행")
+        supervisor["current_task"] = "T5"
+        state["current_task"] = "T5"
+        logger.info("[T4] PASS → T5 comparison 진행")
     elif validation_status == "FAILED":
         supervisor["status"] = "FAILED"
         state["status"] = "FAILED"
-        logger.warning("[T5] FAILED — 워크플로우 종료")
+        logger.warning("[T4] FAILED — 워크플로우 종료")
     else:
         # REVISE: T2부터 재실행 (LGES + CATL 재수집)
         supervisor["current_task"] = "T2"
@@ -260,7 +260,7 @@ def validation_node(state: GraphState) -> GraphState:
         state["current_task"] = "T2"
         state["revision_history"] = revision_history
         logger.info(
-            "[T5] REVISE → T2 재실행 (retry %d/%d), 사유: %s",
+            "[T4] REVISE → T2 재실행 (retry %d/%d), 사유: %s",
             len(revision_history),
             MAX_RETRIES,
             all_issues,
@@ -268,5 +268,5 @@ def validation_node(state: GraphState) -> GraphState:
 
     state["supervisor"] = supervisor
 
-    logger.info("[T5] 완료 — status=%s, issues=%d건", validation_status, len(all_issues))
+    logger.info("[T4] 완료 — status=%s, issues=%d건", validation_status, len(all_issues))
     return state

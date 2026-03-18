@@ -61,7 +61,7 @@ _SYSTEM_PROMPT = """당신은 배터리 산업 전문 기업 분석 애널리스
 [출력 지침]
 - 반드시 재무·기술·시장·리스크 4개 항목을 모두 포함하세요. 누락 시 검증 실패 처리됩니다.
 - 긍정적 근거와 부정적 근거를 모두 균형 있게 서술하세요.
-- 수치 데이터(매출, 영업이익 등)는 출처(문서명 또는 URL)와 함께 명시하세요.
+- 수치·주장 뒤에 반드시 (출처: 파일명 또는 URL) 형식으로 인라인 출처를 명시하세요. [1], Web 1 같은 번호 형식은 사용하지 마세요.
 - 각 항목을 명확한 소제목으로 구분하세요.
 """
 
@@ -124,8 +124,8 @@ def catl_strategy_node(state: GraphState) -> GraphState:
     web_context = ""
     if web_results:
         parts = [
-            f"[Web {i + 1}] {r.get('url', 'unknown')}\n{str(r.get('content', ''))[:600]}"
-            for i, r in enumerate(web_results[:6])
+            f"(출처: {r.get('url', 'unknown')})\n{str(r.get('content', ''))[:600]}"
+            for r in web_results[:6]
         ]
         web_context = "\n\n".join(parts)
 
@@ -135,19 +135,14 @@ def catl_strategy_node(state: GraphState) -> GraphState:
 
     # ── 4. LLM 합성 ──────────────────────────────────────
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                "아래 자료를 바탕으로 CATL 전략을 분석하세요.\n\n"
-                f"{context}"
-            ),
-        },
-    ]
+    topic: str = state.get("report_topic") or ""
+    topic_prefix = f"[보고서 주제: {topic}]\n이 주제 관점에서 CATL을 분석하세요.\n\n" if topic else ""
 
     try:
-        response = llm.invoke(messages)
+        response = llm.invoke([
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": topic_prefix + "아래 자료를 바탕으로 CATL 전략을 분석하세요.\n\n" + context},
+        ])
         analysis_text: str = response.content
     except Exception as exc:
         logger.error("[T3] LLM 호출 실패: %s", exc)

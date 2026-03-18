@@ -189,15 +189,22 @@ def is_sufficient(
 
 
 def docs_to_context(raw_docs: list[Any]) -> str:
-    """검색 결과 문서를 LLM 컨텍스트용 문자열로 변환한다."""
+    """검색 결과 문서를 LLM 컨텍스트용 문자열로 변환한다.
+
+    출처 표기 형식: (출처: 파일명) — 번호 대신 파일명을 사용해
+    LLM이 일관된 형식으로 인라인 출처를 작성하도록 유도한다.
+    """
+    import os
     docs = _normalize_docs(raw_docs)
     if not docs:
         return "(검색 결과 없음)"
     parts = []
-    for i, d in enumerate(docs, 1):
-        source = d.get("metadata", {}).get("source", "unknown")
+    for d in docs:
+        raw_source = d.get("metadata", {}).get("source", "unknown")
+        # 파일 경로에서 파일명만 추출 (확장자 포함)
+        source_name = os.path.basename(raw_source) if raw_source else "unknown"
         content = d.get("page_content", "").strip()
-        parts.append(f"[{i}] 출처: {source}\n{content}")
+        parts.append(f"(출처: {source_name})\n{content}")
     return "\n\n".join(parts)
 
 

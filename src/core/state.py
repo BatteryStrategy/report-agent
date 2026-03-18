@@ -93,6 +93,9 @@ class GraphState(TypedDict, total=False):
     references: list[dict[str, Any]]  # 실제 활용 출처 누적
     final_report: str  # T6 완료 산출물
 
+    # 보고서 주제 (최초 invoke 시 설정)
+    report_topic: str
+
     # Backward compatibility for existing code paths
     current_task: str
     status: str
