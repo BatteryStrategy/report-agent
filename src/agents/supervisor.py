@@ -33,9 +33,19 @@ def supervisor_node(state: GraphState) -> GraphState:
 
 def route_from_supervisor(state: GraphState) -> str:
     """
-    Supervisor Pattern 분기 기준
-    - status가 COMPLETED/FAILED이면 END
-    - 아니면 current_task(T1~T7)에 따라 워커 할당
+    Supervisor Pattern 분기 기준.
+
+    종료 조건:
+    - status == "COMPLETED" or "FAILED"  → END  (무한루프 방지)
+
+    태스크 라우팅:
+    - T1 → research_phase  : market·lges·catl 병렬 fan-out (최초 실행)
+    - T2 → lges_strategy   : validation REVISE 시 재시도 진입점
+    - T3 → catl_strategy   : T2 재실행 후 순차 진행
+    - T4 → comparison
+    - T5 → validation      : PASS → T6 / REVISE → T2(최대 2회) / 초과 → FAILED
+    - T6 → report_writer
+    - T7 → reflection      : 품질 점검 후 COMPLETED 설정
     """
     supervisor_state = state.get("supervisor", {})
     status = supervisor_state.get("status", state.get("status", "IN_PROGRESS"))
@@ -44,8 +54,8 @@ def route_from_supervisor(state: GraphState) -> str:
 
     task = supervisor_state.get("current_task", state.get("current_task", "T1"))
     task_to_node = {
-        "T1": "market_research",
-        "T2": "lges_strategy",
+        "T1": "research_phase",   # Fan-out: T1·T2·T3 병렬 실행
+        "T2": "lges_strategy",    # REVISE 재시도 진입점 (T2 → T3 → T4 → T5 순차)
         "T3": "catl_strategy",
         "T4": "comparison",
         "T5": "validation",

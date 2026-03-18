@@ -6,4 +6,9 @@ _rag = SingletonRAG.get_instance("common")
 
 
 def reflection_node(state: GraphState) -> GraphState:
-    pass
+    """T7 Reflection — 현재 stub: COMPLETED 처리."""
+    supervisor = dict(state.get("supervisor") or {})
+    supervisor["status"] = "COMPLETED"
+    state["supervisor"] = supervisor
+    state["status"] = "COMPLETED"
+    return state

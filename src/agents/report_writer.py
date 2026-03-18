@@ -6,4 +6,10 @@ _rag = SingletonRAG.get_instance("common")
 
 
 def report_writer_node(state: GraphState) -> GraphState:
-    pass
+    """T6 Report Writer — 현재 stub: T7 reflection으로 진행."""
+    supervisor = dict(state.get("supervisor") or {})
+    supervisor["current_task"] = "T7"
+    state["supervisor"] = supervisor
+    state["current_task"] = "T7"
+    state["final_report"] = "(stub) 보고서 생성 예정"
+    return state
