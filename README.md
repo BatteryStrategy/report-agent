@@ -20,18 +20,12 @@
 
 현재 기본 Task 흐름은 아래와 같습니다.
 
-- T1: market_research
-
-- T2: lges_strategy
-
+- T1: research_phase (market · lges · catl 병렬 fan-out)
+- T2: lges_strategy (REVISE 재시도 진입점)
 - T3: catl_strategy
-
 - T4: comparison
-
 - T5: validation
-
 - T6: report_writer
-
 - T7: reflection
 
 ## Shared State를 사용하는 이유
@@ -78,8 +72,98 @@ Shared State를 쓰더라도 모든 노드가 아무 키나 수정하면 상태 
 
 상세 타입 정의는 `src/core/state.py`를 참고하세요.
 
+## 검색 전략: RAG 우선 + Tavily Fallback
+
+각 Research 노드는 동일한 2단계 검색 정책을 따릅니다.
+
+**단계 1 — 내부 문서 검색 (RAG)**
+
+`SingletonRAG.get_instance(namespace).get_retriever()` 로 FAISS 인덱스에서 관련 청크를 검색합니다.
+PDF는 `data/raw/{namespace}/` 에 넣으면 자동으로 임베딩 및 색인됩니다.
+
+**단계 2 — 부족 판정 (4가지 기준)**
+
+| 기준 | 임계값 | 파일 위치 |
+|------|--------|-----------|
+| 최소 문서 수 | `MIN_DOCS = 3` | `src/core/rag_policy.py` |
+| 평균 관련도 | `MIN_RELEVANCE = 0.4` | `src/core/rag_policy.py` |
+| 필수 키워드 커버리지 | 100% (노드별 상이) | `REQUIRED_KEYWORDS` |
+| 최소 고유 출처 수 | `MIN_SOURCES = 2` | `src/core/rag_policy.py` |
+
+위 4가지 중 하나라도 실패하면 Tavily 웹 검색으로 fallback합니다.
+fallback 여부는 `state[*_agent]["fallback_used"]` 에 기록됩니다.
+
+**노드별 필수 키워드**
+
+| 노드 | 필수 키워드 |
+|------|------------|
+| market | `전기차`, `ESS` |
+| lges | `LGES`, `배터리`, `전략`, `재무` |
+| catl | `CATL`, `배터리`, `전략`, `재무` |
+
+**기준 선택 이유**
+
+- **내부 근거 우선**: 검증된 PDF 문서를 먼저 사용해 LLM 환각을 줄입니다.
+- **비용/속도 균형**: RAG는 무료이고 빠릅니다. Tavily는 충분하지 않을 때만 호출해 API 비용을 최소화합니다.
+- **임계값 근거**: MIN_DOCS=3은 단일 청크 의존 방지, MIN_RELEVANCE=0.4는 FAISS L2 거리 정규화(`1/(1+dist)`) 기준 "관련 있음" 하한, MIN_SOURCES=2는 단일 문서 편향 방지입니다.
+
+---
+
+## Validation 편향성 점검
+
+`validation_node` (T5)는 세 가지 항목을 검증합니다.
+
+### 1. 데이터 편향성 점검
+
+LLM이 LGES·CATL 분석 텍스트를 각각 긍정 문장과 부정 문장으로 분류합니다.
+
+```
+긍정 비율 = 긍정 문장 수 / (긍정 + 부정 문장 수)
+```
+
+한쪽 비율이 `BIAS_THRESHOLD = 70%` 를 초과하면 편향으로 판정합니다.
+
+| 판정 예시 | 결과 |
+|-----------|------|
+| LGES 긍정 75%, 부정 25% | REVISE (긍정 편향) |
+| CATL 긍정 40%, 부정 60% | PASS (균형) |
+| CATL 부정 80%, 긍정 20% | REVISE (부정 편향) |
+
+### 2. 필수 비교 항목 누락 점검
+
+아래 4개 항목이 모두 분석 텍스트에 포함되어야 합니다.
+
+`재무` · `기술` · `시장` · `리스크`
+
+LLM 분류 실패 시 텍스트 직접 키워드 매칭으로 fallback합니다.
+
+### 3. 출처 교차 검증
+
+LGES 또는 CATL 중 하나 이상이 **내부(RAG) + 외부(Web) 양쪽 출처를 모두 사용**했어야 합니다.
+
+```python
+cross_validated = (lges.rag_doc_count > 0 AND lges.web_result_count > 0)
+               OR (catl.rag_doc_count > 0 AND catl.web_result_count > 0)
+```
+
+미충족 시 REVISE로 판정합니다.
+
+### 판정 결과 및 재시도 규칙
+
+| 상태 | 다음 액션 |
+|------|-----------|
+| `PASS` | T6 report_writer 진행 |
+| `REVISE` | `revision_history` 에 사유 기록 후 T2 재실행 |
+| `FAILED` | `MAX_RETRIES = 2` 초과 시 워크플로우 종료 |
+
+REVISE 발생 시 `state["validation_result"]["revision_notes"]` 에 구체 사유가 기록됩니다.
+
+---
+
 ## 구현 참고
 
 - Supervisor 라우팅 로직: `src/agents/supervisor.py`
-- 그래프 빌드: `src/graph/workflow.py`
+- 그래프 빌드 및 Retry 루프: `src/graph/workflow.py`
+- RAG 부족 판정 상수·함수: `src/core/rag_policy.py`
 - 상태 타입 정의: `src/core/state.py`
+- Validation 편향 로직: `src/agents/validation.py`
